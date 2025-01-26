@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:async';
 import 'dart:io' show Platform;
-
+import 'dart:developer';
 void main() {
   runApp(const MyApp());
 }
@@ -42,11 +42,12 @@ class _HomePageState extends State<HomePage> {
   bool isConnected = false;
   StreamSubscription? connectionStateSubscription;
   StreamSubscription? characteristicSubscription;
-  StreamSubscription? bluetoothStateSubscription;
   final ScrollController _scrollController = ScrollController();
 
-  final String EEG_SERVICE_UUID =
-      "4fafc201-1fb5-459e-8fcc-c5c9c331914b"; // Replace with actual UUID
+  // BLE Configuration
+  final String DEVICE_NAME = "INKY-EEG";
+  final String SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+  final String CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
 
   @override
   void initState() {
@@ -64,11 +65,6 @@ class _HomePageState extends State<HomePage> {
   }
 
   void startScan() {
-    // if (Platform.isWeb) {
-    //   _showSnackBar('Scanning not supported on web');
-    //   return;
-    // }
-
     setState(() {
       scanResults.clear();
       isScanning = true;
@@ -87,7 +83,8 @@ class _HomePageState extends State<HomePage> {
 
     FlutterBluePlus.scanResults.listen((results) {
       setState(() {
-        scanResults = results;
+        // Filter devices by name
+        scanResults = results.where((result) => result.device.name == DEVICE_NAME).toList();
       });
     });
   }
@@ -112,12 +109,16 @@ class _HomePageState extends State<HomePage> {
 
       List<BluetoothService> services = await device.discoverServices();
       for (var service in services) {
-        for (var characteristic in service.characteristics) {
-          if (characteristic.properties.notify) {
-            await characteristic.setNotifyValue(true);
-            characteristicSubscription = characteristic.value.listen((value) {
-              _handleEEGData(value);
-            });
+        // Check if the service UUID matches
+        if (service.uuid.toString() == SERVICE_UUID) {
+          for (var characteristic in service.characteristics) {
+            // Check if the characteristic UUID matches
+            if (characteristic.uuid.toString() == CHARACTERISTIC_UUID && characteristic.properties.notify) {
+              await characteristic.setNotifyValue(true);
+              characteristicSubscription = characteristic.value.listen((value) {
+                _handleEEGData(value);
+              });
+            }
           }
         }
       }
@@ -149,33 +150,27 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  Future<void> saveData() async {
-    try {
-      final String jsonData = json.encode(eegData);
-      // Save to local storage or file system
-      _showSnackBar('Data saved successfully');
-    } catch (e) {
-      _showSnackBar('Failed to save data: ${e.toString()}');
-    }
-  }
+Future<void> sendDataToServer() async {
+  try {
+    log('sending data: $eegData' );
+    final response = await http.post(
+      Uri.parse('https://3a01-50-196-183-41.ngrok-free.app/eeg-data'), // Updated endpoint
+      headers: {
+        'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': 'true', // Add this header
+      },
+      body: json.encode({'data': eegData}),
+    );
 
-  Future<void> sendDataToServer() async {
-    try {
-      final response = await http.post(
-        Uri.parse('http://your-flask-server/eeg-data'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({'data': eegData}),
-      );
-
-      if (response.statusCode == 200) {
-        _showSnackBar('Data sent successfully');
-      } else {
-        throw Exception('Failed to send data');
-      }
-    } catch (e) {
-      _showSnackBar('Failed to send data: ${e.toString()}');
+    if (response.statusCode == 200) {
+      _showSnackBar('Data sent successfully');
+    } else {
+      throw Exception('Failed to send data: ${response.statusCode}');
     }
+  } catch (e) {
+    _showSnackBar('Failed to send data: ${e.toString()}');
   }
+}
 
   void _showSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -190,8 +185,7 @@ class _HomePageState extends State<HomePage> {
         title: const Text('EEG BLE Monitor'),
         actions: [
           IconButton(
-            icon:
-                Icon(isConnected ? Icons.bluetooth_connected : Icons.bluetooth),
+            icon: Icon(isConnected ? Icons.bluetooth_connected : Icons.bluetooth),
             onPressed: null,
           ),
         ],
@@ -206,13 +200,7 @@ class _HomePageState extends State<HomePage> {
                 ElevatedButton.icon(
                   icon: Icon(isScanning ? Icons.stop : Icons.search),
                   label: Text(isScanning ? 'Stop Scan' : 'Start Scan'),
-                  onPressed:
-                      isScanning ? () => FlutterBluePlus.stopScan() : startScan,
-                ),
-                ElevatedButton.icon(
-                  icon: const Icon(Icons.save),
-                  label: const Text('Save Data'),
-                  onPressed: isConnected ? saveData : null,
+                  onPressed: isScanning ? () => FlutterBluePlus.stopScan() : startScan,
                 ),
                 ElevatedButton.icon(
                   icon: const Icon(Icons.cloud_upload),
@@ -230,9 +218,7 @@ class _HomePageState extends State<HomePage> {
                 itemBuilder: (context, index) {
                   final result = scanResults[index];
                   return ListTile(
-                    title: Text(result.device.name.isEmpty
-                        ? 'Unknown Device'
-                        : result.device.name),
+                    title: Text(result.device.name.isEmpty ? 'Unknown Device' : result.device.name),
                     subtitle: Text(result.device.id.toString()),
                     trailing: ElevatedButton(
                       child: const Text('Connect'),
@@ -281,7 +267,6 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
-    bluetoothStateSubscription?.cancel();
     connectionStateSubscription?.cancel();
     characteristicSubscription?.cancel();
     _scrollController.dispose();
