@@ -46,10 +46,13 @@ class _HomePageState extends State<HomePage> {
   final ScrollController _scrollController = ScrollController();
 
   // BLE Configuration
-  final String DEVICE_NAME = "INKY-EEG";
-  final String SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
-  final String CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+  // final String DEVICE_NAME = "EEG-snag-hat-s3";
+  final String SERVICE_UUID = "7d0913a6-cc3e-443d-9b83-b0b84faf685f";
+  final String CHARACTERISTIC_UUID = "2334502e-ca45-4f74-855d-e9bb776802ad";
 
+// BLE UUIDs
+// #define SERVICE_UUID "7d0913a6-cc3e-443d-9b83-b0b84faf685f"
+// #define CHARACTERISTIC_UUID "2334502e-ca45-4f74-855d-e9bb776802ad"
   @override
   void initState() {
     super.initState();
@@ -85,9 +88,8 @@ class _HomePageState extends State<HomePage> {
     FlutterBluePlus.scanResults.listen((results) {
       setState(() {
         // Filter devices by name
-        scanResults = results
-            .where((result) => result.device.name == DEVICE_NAME)
-            .toList();
+        scanResults =
+            results.where((result) => result.device.name.isNotEmpty).toList();
       });
     });
   }
@@ -112,10 +114,8 @@ class _HomePageState extends State<HomePage> {
 
       List<BluetoothService> services = await device.discoverServices();
       for (var service in services) {
-        // Check if the service UUID matches
         if (service.uuid.toString() == SERVICE_UUID) {
           for (var characteristic in service.characteristics) {
-            // Check if the characteristic UUID matches
             if (characteristic.uuid.toString() == CHARACTERISTIC_UUID &&
                 characteristic.properties.notify) {
               await characteristic.setNotifyValue(true);
@@ -139,6 +139,7 @@ class _HomePageState extends State<HomePage> {
         eegData.removeAt(0);
       }
     });
+
     _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
   }
 
@@ -157,13 +158,11 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> sendDataToServer() async {
     try {
-      log('sending data: $eegData');
+      log('Sending data: $eegData');
       final response = await http.post(
-        Uri.parse(
-            'https://3a01-50-196-183-41.ngrok-free.app/eeg-data'), // Updated endpoint
+        Uri.parse('http://10.0.0.25:5000/eeg-data'),
         headers: {
           'Content-Type': 'application/json',
-          'ngrok-skip-browser-warning': 'true', // Add this header
         },
         body: json.encode({'data': eegData}),
       );
