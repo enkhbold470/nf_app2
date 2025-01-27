@@ -6,6 +6,7 @@ import 'dart:convert';
 import 'dart:async';
 import 'dart:io' show Platform;
 import 'dart:developer';
+
 void main() {
   runApp(const MyApp());
 }
@@ -84,7 +85,9 @@ class _HomePageState extends State<HomePage> {
     FlutterBluePlus.scanResults.listen((results) {
       setState(() {
         // Filter devices by name
-        scanResults = results.where((result) => result.device.name == DEVICE_NAME).toList();
+        scanResults = results
+            .where((result) => result.device.name == DEVICE_NAME)
+            .toList();
       });
     });
   }
@@ -113,7 +116,8 @@ class _HomePageState extends State<HomePage> {
         if (service.uuid.toString() == SERVICE_UUID) {
           for (var characteristic in service.characteristics) {
             // Check if the characteristic UUID matches
-            if (characteristic.uuid.toString() == CHARACTERISTIC_UUID && characteristic.properties.notify) {
+            if (characteristic.uuid.toString() == CHARACTERISTIC_UUID &&
+                characteristic.properties.notify) {
               await characteristic.setNotifyValue(true);
               characteristicSubscription = characteristic.value.listen((value) {
                 _handleEEGData(value);
@@ -129,7 +133,8 @@ class _HomePageState extends State<HomePage> {
 
   void _handleEEGData(List<int> data) {
     setState(() {
-      eegData.add(utf8.decode(data));
+      eegData.add(
+          data.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join(' '));
       if (eegData.length > 100) {
         eegData.removeAt(0);
       }
@@ -150,27 +155,28 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-Future<void> sendDataToServer() async {
-  try {
-    log('sending data: $eegData' );
-    final response = await http.post(
-      Uri.parse('https://3a01-50-196-183-41.ngrok-free.app/eeg-data'), // Updated endpoint
-      headers: {
-        'Content-Type': 'application/json',
-        'ngrok-skip-browser-warning': 'true', // Add this header
-      },
-      body: json.encode({'data': eegData}),
-    );
+  Future<void> sendDataToServer() async {
+    try {
+      log('sending data: $eegData');
+      final response = await http.post(
+        Uri.parse(
+            'https://3a01-50-196-183-41.ngrok-free.app/eeg-data'), // Updated endpoint
+        headers: {
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true', // Add this header
+        },
+        body: json.encode({'data': eegData}),
+      );
 
-    if (response.statusCode == 200) {
-      _showSnackBar('Data sent successfully');
-    } else {
-      throw Exception('Failed to send data: ${response.statusCode}');
+      if (response.statusCode == 200) {
+        _showSnackBar('Data sent successfully');
+      } else {
+        throw Exception('Failed to send data: ${response.statusCode}');
+      }
+    } catch (e) {
+      _showSnackBar('Failed to send data: ${e.toString()}');
     }
-  } catch (e) {
-    _showSnackBar('Failed to send data: ${e.toString()}');
   }
-}
 
   void _showSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -185,7 +191,8 @@ Future<void> sendDataToServer() async {
         title: const Text('EEG BLE Monitor'),
         actions: [
           IconButton(
-            icon: Icon(isConnected ? Icons.bluetooth_connected : Icons.bluetooth),
+            icon:
+                Icon(isConnected ? Icons.bluetooth_connected : Icons.bluetooth),
             onPressed: null,
           ),
         ],
@@ -200,7 +207,8 @@ Future<void> sendDataToServer() async {
                 ElevatedButton.icon(
                   icon: Icon(isScanning ? Icons.stop : Icons.search),
                   label: Text(isScanning ? 'Stop Scan' : 'Start Scan'),
-                  onPressed: isScanning ? () => FlutterBluePlus.stopScan() : startScan,
+                  onPressed:
+                      isScanning ? () => FlutterBluePlus.stopScan() : startScan,
                 ),
                 ElevatedButton.icon(
                   icon: const Icon(Icons.cloud_upload),
@@ -218,7 +226,9 @@ Future<void> sendDataToServer() async {
                 itemBuilder: (context, index) {
                   final result = scanResults[index];
                   return ListTile(
-                    title: Text(result.device.name.isEmpty ? 'Unknown Device' : result.device.name),
+                    title: Text(result.device.name.isEmpty
+                        ? 'Unknown Device'
+                        : result.device.name),
                     subtitle: Text(result.device.id.toString()),
                     trailing: ElevatedButton(
                       child: const Text('Connect'),
