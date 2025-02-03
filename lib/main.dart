@@ -160,7 +160,7 @@ class _HomePageState extends State<HomePage> {
     try {
       log('Sending data: $eegData');
       final response = await http.post(
-        Uri.parse('http://10.0.0.25:5000/eeg-data'),
+        Uri.parse('https://clean-eeg.onrender.com/'),
         headers: {
           'Content-Type': 'application/json',
         },
