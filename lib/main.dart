@@ -6,8 +6,14 @@ import 'dart:convert';
 import 'dart:async';
 import 'dart:io' show Platform;
 import 'dart:developer';
+// supabase
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Supabase.initialize(
+      url: String.fromEnvironment('supabase_url', defaultValue: ''),
+      anonKey: String.fromEnvironment('supabase_anon_key', defaultValue: ''));
   runApp(const MyApp());
 }
 
@@ -45,6 +51,9 @@ class _HomePageState extends State<HomePage> {
   StreamSubscription? characteristicSubscription;
   final ScrollController _scrollController = ScrollController();
 
+  //supabase
+  final supabase = Supabase.instance.client; // Add this line
+
   // BLE Configuration
   // final String DEVICE_NAME = "EEG-snag-hat-s3";
   final String SERVICE_UUID = "7d0913a6-cc3e-443d-9b83-b0b84faf685f";
@@ -57,6 +66,53 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     _initializeBluetooth();
+    _setupAuthListener(); // Add this
+  }
+
+  // Add this new method
+  void _setupAuthListener() {
+    supabase.auth.onAuthStateChange.listen((data) {
+      final AuthChangeEvent event = data.event;
+      final Session? session = data.session;
+      log('Auth state changed: $event');
+      if (session != null) {
+        log('User email: ${session.user.email}');
+      }
+    });
+  }
+
+  // Add these new methods for auth operations
+  Future<void> signUp(String email, String password) async {
+    try {
+      await supabase.auth.signUp(
+        email: email,
+        password: password,
+      );
+      _showSnackBar('Sign up successful! Please check your email.');
+    } catch (e) {
+      _showSnackBar('Sign up failed: ${e.toString()}');
+    }
+  }
+
+  Future<void> signIn(String email, String password) async {
+    try {
+      await supabase.auth.signInWithPassword(
+        email: email,
+        password: password,
+      );
+      _showSnackBar('Login successful!');
+    } catch (e) {
+      _showSnackBar('Login failed: ${e.toString()}');
+    }
+  }
+
+  Future<void> signInWithMagicLink(String email) async {
+    try {
+      await supabase.auth.signInWithOtp(email: email);
+      _showSnackBar('Magic link sent to $email');
+    } catch (e) {
+      _showSnackBar('Failed to send magic link: ${e.toString()}');
+    }
   }
 
   Future<void> _initializeBluetooth() async {
@@ -160,7 +216,8 @@ class _HomePageState extends State<HomePage> {
     try {
       log('Sending data: $eegData');
       final response = await http.post(
-        Uri.parse('https://clean-eeg.onrender.com/'),
+        Uri.parse(String.fromEnvironment('server_url',
+            defaultValue: 'https://clean-eeg.onrender.com/')),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -189,6 +246,73 @@ class _HomePageState extends State<HomePage> {
       appBar: AppBar(
         title: const Text('EEG BLE Monitor'),
         actions: [
+          PopupMenuButton<String>(
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'signIn',
+                child: Text('Sign In'),
+              ),
+              const PopupMenuItem(
+                value: 'signUp',
+                child: Text('Sign Up'),
+              ),
+              const PopupMenuItem(
+                value: 'magicLink',
+                child: Text('Magic Link'),
+              ),
+            ],
+            onSelected: (value) async {
+              final emailController = TextEditingController();
+              final passwordController = TextEditingController();
+
+              await showDialog(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: Text(value == 'magicLink' ? 'Enter Email' : 'Login'),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextField(
+                        controller: emailController,
+                        decoration: const InputDecoration(labelText: 'Email'),
+                      ),
+                      if (value != 'magicLink')
+                        TextField(
+                          controller: passwordController,
+                          decoration:
+                              const InputDecoration(labelText: 'Password'),
+                          obscureText: true,
+                        ),
+                    ],
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                      },
+                      child: const Text('Cancel'),
+                    ),
+                    TextButton(
+                      onPressed: () async {
+                        Navigator.pop(context);
+                        final email = emailController.text;
+                        final password = passwordController.text;
+
+                        if (value == 'signIn') {
+                          await signIn(email, password);
+                        } else if (value == 'signUp') {
+                          await signUp(email, password);
+                        } else if (value == 'magicLink') {
+                          await signInWithMagicLink(email);
+                        }
+                      },
+                      child: const Text('Submit'),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
           IconButton(
             icon:
                 Icon(isConnected ? Icons.bluetooth_connected : Icons.bluetooth),
