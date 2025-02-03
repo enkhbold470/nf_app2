@@ -50,6 +50,8 @@ class _HomePageState extends State<HomePage> {
   StreamSubscription? connectionStateSubscription;
   StreamSubscription? characteristicSubscription;
   final ScrollController _scrollController = ScrollController();
+  bool isRecording = false;
+  List<String> recordedData = [];
 
   //supabase
   final supabase = Supabase.instance.client; // Add this line
@@ -188,11 +190,15 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _handleEEGData(List<int> data) {
+    final dataString = data.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join(' ');
+    
     setState(() {
-      eegData.add(
-          data.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join(' '));
+      eegData.add(dataString);
       if (eegData.length > 100) {
         eegData.removeAt(0);
+      }
+      if (isRecording) {
+        recordedData.add(dataString);
       }
     });
 
@@ -232,6 +238,38 @@ class _HomePageState extends State<HomePage> {
     } catch (e) {
       _showSnackBar('Failed to send data: ${e.toString()}');
     }
+  }
+
+  Future<void> stopRecordingAndSend() async {
+    setState(() {
+      isRecording = false;
+    });
+    if (recordedData.isNotEmpty) {
+      try {
+        final response = await http.post(
+          Uri.parse('https://clean-eeg.onrender.com/'),
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: json.encode({'data': recordedData}),
+        );
+
+        if (response.statusCode == 200) {
+          _showSnackBar('Recorded data sent successfully');
+        } else {
+          throw Exception('Failed to send recorded data: ${response.statusCode}');
+        }
+      } catch (e) {
+        _showSnackBar('Failed to send recorded data: ${e.toString()}');
+      }
+    }
+  }
+
+  void startRecording() {
+    setState(() {
+      isRecording = true;
+      recordedData.clear();
+    });
   }
 
   void _showSnackBar(String message) {
@@ -337,6 +375,23 @@ class _HomePageState extends State<HomePage> {
                   icon: const Icon(Icons.cloud_upload),
                   label: const Text('Send Data'),
                   onPressed: isConnected ? sendDataToServer : null,
+                ),
+                ElevatedButton.icon(
+                  icon: Icon(isRecording ? Icons.stop : Icons.fiber_manual_record),
+                  label: Text(isRecording ? 'Stop Recording' : 'Start Recording'),
+                  onPressed: isConnected 
+                      ? (isRecording ? null : startRecording)
+                      : null,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: isRecording ? Colors.red : null,
+                  ),
+                ),
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.save),
+                  label: const Text('Save & Send'),
+                  onPressed: isConnected && isRecording 
+                      ? stopRecordingAndSend 
+                      : null,
                 ),
               ],
             ),
