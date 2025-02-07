@@ -12,14 +12,15 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Supabase.initialize(
-      url: String.fromEnvironment('supabase_url', defaultValue: ''),
-      anonKey: String.fromEnvironment('supabase_anon_key', defaultValue: ''));
+    url: String.fromEnvironment('supabase_url', defaultValue: ''),
+    anonKey: String.fromEnvironment('supabase_anon_key', defaultValue: ''),
+  );
   runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
-
+  
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -35,7 +36,7 @@ class MyApp extends StatelessWidget {
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
-
+  
   @override
   _HomePageState createState() => _HomePageState();
 }
@@ -53,25 +54,24 @@ class _HomePageState extends State<HomePage> {
   bool isRecording = false;
   List<String> recordedData = [];
 
-  //supabase
-  final supabase = Supabase.instance.client; // Add this line
+  // Supabase client
+  final supabase = Supabase.instance.client;
 
   // BLE Configuration
-  // final String DEVICE_NAME = "EEG-snag-hat-s3";
-  final String SERVICE_UUID = "7d0913a6-cc3e-443d-9b83-b0b84faf685f";
-  final String CHARACTERISTIC_UUID = "2334502e-ca45-4f74-855d-e9bb776802ad";
+  final String SERVICE_UUID = "22bbaa2a-c8c3-4d4b-8d7e-96b704283c6c";
+  final String CHARACTERISTIC_UUID = "dbecd60f-595a-4ff1-b9cd-fe0491cc1d0d";
 
-// BLE UUIDs
-// #define SERVICE_UUID "7d0913a6-cc3e-443d-9b83-b0b84faf685f"
-// #define CHARACTERISTIC_UUID "2334502e-ca45-4f74-855d-e9bb776802ad"
+  // New state variable for focus level (0 to 100)
+  // Initialize to 0 so the indicator is always visible after connection.
+  double focusLevel = 0;
+
   @override
   void initState() {
     super.initState();
     _initializeBluetooth();
-    _setupAuthListener(); // Add this
+    _setupAuthListener();
   }
 
-  // Add this new method
   void _setupAuthListener() {
     supabase.auth.onAuthStateChange.listen((data) {
       final AuthChangeEvent event = data.event;
@@ -83,7 +83,6 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  // Add these new methods for auth operations
   Future<void> signUp(String email, String password) async {
     try {
       await supabase.auth.signUp(
@@ -158,6 +157,8 @@ class _HomePageState extends State<HomePage> {
       setState(() {
         connectedDevice = device;
         isConnected = true;
+        // Optionally set a default focus level when connection is established.
+        focusLevel = 0;
       });
 
       connectionStateSubscription = device.state.listen((state) {
@@ -177,7 +178,8 @@ class _HomePageState extends State<HomePage> {
             if (characteristic.uuid.toString() == CHARACTERISTIC_UUID &&
                 characteristic.properties.notify) {
               await characteristic.setNotifyValue(true);
-              characteristicSubscription = characteristic.value.listen((value) {
+              characteristicSubscription =
+                  characteristic.value.listen((value) {
                 _handleEEGData(value);
               });
             }
@@ -190,7 +192,9 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _handleEEGData(List<int> data) {
-    final dataString = data.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join(' ');
+    final dataString = data
+        .map((byte) => byte.toRadixString(16).padLeft(2, '0'))
+        .join(' ');
     
     setState(() {
       eegData.add(dataString);
@@ -231,6 +235,16 @@ class _HomePageState extends State<HomePage> {
       );
 
       if (response.statusCode == 200) {
+        // Decode the focus level from the response
+        final Map<String, dynamic> resBody = json.decode(response.body);
+        if (resBody.containsKey('focus_level')) {
+          double newFocusLevel = (resBody['focus_level'] is num)
+              ? resBody['focus_level'].toDouble()
+              : 0.0;
+          setState(() {
+            focusLevel = newFocusLevel;
+          });
+        }
         _showSnackBar('Data sent successfully');
       } else {
         throw Exception('Failed to send data: ${response.statusCode}');
@@ -278,6 +292,17 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  // Helper method to get a color based on the focus level value
+  Color _getFocusColor(double level) {
+    if (level < 40) {
+      return Colors.red;
+    } else if (level < 70) {
+      return Colors.amber;
+    } else {
+      return Colors.green;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -317,8 +342,7 @@ class _HomePageState extends State<HomePage> {
                       if (value != 'magicLink')
                         TextField(
                           controller: passwordController,
-                          decoration:
-                              const InputDecoration(labelText: 'Password'),
+                          decoration: const InputDecoration(labelText: 'Password'),
                           obscureText: true,
                         ),
                     ],
@@ -352,14 +376,14 @@ class _HomePageState extends State<HomePage> {
             },
           ),
           IconButton(
-            icon:
-                Icon(isConnected ? Icons.bluetooth_connected : Icons.bluetooth),
+            icon: Icon(isConnected ? Icons.bluetooth_connected : Icons.bluetooth),
             onPressed: null,
           ),
         ],
       ),
       body: Column(
         children: [
+          // Row of control buttons
           Padding(
             padding: const EdgeInsets.all(8.0),
             child: Row(
@@ -368,8 +392,7 @@ class _HomePageState extends State<HomePage> {
                 ElevatedButton.icon(
                   icon: Icon(isScanning ? Icons.stop : Icons.search),
                   label: Text(isScanning ? 'Stop Scan' : 'Start Scan'),
-                  onPressed:
-                      isScanning ? () => FlutterBluePlus.stopScan() : startScan,
+                  onPressed: isScanning ? () => FlutterBluePlus.stopScan() : startScan,
                 ),
                 ElevatedButton.icon(
                   icon: const Icon(Icons.cloud_upload),
@@ -379,9 +402,7 @@ class _HomePageState extends State<HomePage> {
                 ElevatedButton.icon(
                   icon: Icon(isRecording ? Icons.stop : Icons.fiber_manual_record),
                   label: Text(isRecording ? 'Stop Recording' : 'Start Recording'),
-                  onPressed: isConnected 
-                      ? (isRecording ? null : startRecording)
-                      : null,
+                  onPressed: isConnected ? (isRecording ? null : startRecording) : null,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: isRecording ? Colors.red : null,
                   ),
@@ -389,13 +410,12 @@ class _HomePageState extends State<HomePage> {
                 ElevatedButton.icon(
                   icon: const Icon(Icons.save),
                   label: const Text('Save & Send'),
-                  onPressed: isConnected && isRecording 
-                      ? stopRecordingAndSend 
-                      : null,
+                  onPressed: isConnected && isRecording ? stopRecordingAndSend : null,
                 ),
               ],
             ),
           ),
+          // Display scan results if not connected
           if (isScanning || (!isConnected && scanResults.isNotEmpty))
             Expanded(
               flex: 1,
@@ -416,30 +436,64 @@ class _HomePageState extends State<HomePage> {
                 },
               ),
             ),
+          // Display EEG data when connected with overlayed Focus Indicator
           if (isConnected)
             Expanded(
               flex: 2,
-              child: Container(
-                margin: const EdgeInsets.all(8.0),
-                padding: const EdgeInsets.all(8.0),
-                decoration: BoxDecoration(
-                  color: Colors.black,
-                  border: Border.all(color: Colors.grey),
-                  borderRadius: BorderRadius.circular(8.0),
-                ),
-                child: ListView.builder(
-                  controller: _scrollController,
-                  itemCount: eegData.length,
-                  itemBuilder: (context, index) {
-                    return Text(
-                      eegData[index],
-                      style: const TextStyle(
-                        color: Colors.green,
-                        fontFamily: 'Courier',
+              child: Stack(
+                children: [
+                  // Background: Raw EEG data display
+                  Container(
+                    margin: const EdgeInsets.all(8.0),
+                    padding: const EdgeInsets.all(8.0),
+                    decoration: BoxDecoration(
+                      color: Colors.black,
+                      border: Border.all(color: Colors.grey),
+                      borderRadius: BorderRadius.circular(8.0),
+                    ),
+                    child: ListView.builder(
+                      controller: _scrollController,
+                      itemCount: eegData.length,
+                      itemBuilder: (context, index) {
+                        return Text(
+                          eegData[index],
+                          style: const TextStyle(
+                            color: Colors.green,
+                            fontFamily: 'Courier',
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  // Foreground: Focus Level Indicator overlay (always visible once connected)
+                  Center(
+                    child: Container(
+                      width: 150,
+                      height: 150,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          CircularProgressIndicator(
+                            value: focusLevel / 100, // using default or updated value
+                            strokeWidth: 12,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              _getFocusColor(focusLevel),
+                            ),
+                            backgroundColor: Colors.grey[800],
+                          ),
+                          Text(
+                            '${focusLevel.toStringAsFixed(0)}%',
+                            style: TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                              color: _getFocusColor(focusLevel),
+                            ),
+                          ),
+                        ],
                       ),
-                    );
-                  },
-                ),
+                    ),
+                  ),
+                ],
               ),
             ),
         ],
